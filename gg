@@ -1,0 +1,87 @@
+local HttpService = game:GetService("HttpService")
+local Players     = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui", 30)
+
+local request = syn and syn.request or http_request or request or HttpPost or function(t)
+    return HttpService:PostAsync(t.Url, t.Body, Enum.HttpContentType.ApplicationJson, false, t.Headers)
+end
+
+local START_TIME = tick()
+local START_GOLD = nil
+
+local function commafy(n)
+    return tostring(math.floor(n)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+end
+
+local function getStat(name)
+    local obj = PlayerGui:FindFirstChild(name, true)
+    if obj and (obj:IsA("TextLabel") or obj:IsA("TextBox") or obj:IsA("TextButton")) then
+        return obj.Text:gsub("[^%d%.]", "")
+    end
+    return nil
+end
+
+local function getHeadshot(id)
+    local success, result = pcall(function()
+        local res = request({Url = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="..id.."&size=420x420&format=Png", Method = "GET"})
+        return HttpService:JSONDecode(res.Body).data[1].imageUrl
+    end)
+    if success and result then return result end
+    return "https://www.roblox.com/headshot-thumbnail/image?userId="..id.."&width=420&height=420&format=png"
+end
+
+local function send()
+    local level   = getStat("Level") or "??"
+    local goldStr = getStat("Gold")  or "0"
+    local gold    = tonumber(goldStr) or 0
+
+    if not START_GOLD then START_GOLD = gold end
+    local gained = math.max(gold - START_GOLD, 0)
+
+    local elapsed = tick() - START_TIME
+    local h = math.floor(elapsed / 3600)
+    local m = math.floor((elapsed % 3600) / 60)
+    local s = math.floor(elapsed % 60)
+    local timeStr = string.format("%02d:%02d:%02d", h, m, s)
+
+    local payload = {
+        username   = "Stat Tracker | The Forge",
+        avatar_url = "https://tr.rbxcdn.com/180DAY-e6ba7011fa99665f1d1dbb9e675d8466/150/150/Image/Webp/noFilter",
+        embeds = {{
+            title     = "Time elapsed: " .. timeStr,
+            color     = 131586,
+            thumbnail = {url = getHeadshot(LocalPlayer.UserId)},
+            fields = {
+                {name = "Current Gold", value = "$"..commafy(gold),    inline = true},
+                {name = "Level",        value = level,                inline = true},
+                {name = "Gold Gained",  value = "$"..commafy(gained), inline = false}
+            },
+            footer = {text = "Roblox User ID: "..LocalPlayer.UserId.." | "..LocalPlayer.Name.." • Today at "..os.date("%I:%M %p")}
+        }}
+    }
+
+    pcall(function()
+        request({
+            Url     = WEBHOOK_URL,
+            Method  = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body    = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
+-- First send immediately
+send()
+
+-- Then every UPDATE_INTERVAL seconds
+spawn(function()
+    while true do
+        wait(UPDATE_INTERVAL)
+        if LocalPlayer.Parent then
+            send()
+        end
+    end
+end)
+
+print("Forge Tracker LOADED | Updates every "..UPDATE_INTERVAL.." seconds")
